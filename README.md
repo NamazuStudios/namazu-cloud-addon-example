@@ -81,6 +81,25 @@ input:
 1. Never re-declare a contract variable (they live in `20-variables.tf`).
 2. Never couple to another addon except through outputs/refs.
 
+## Local validation (before pushing)
+
+```bash
+terraform fmt -check -recursive .                       # formatting is gated in CI
+terraform init -backend=false && terraform validate     # parses root + generates .terraform.lock.hcl (commit it)
+(cd bootstrap && terraform init -backend=false && terraform validate)
+
+python3 scripts/addon_tools.py lint-manifest manifest.yaml
+python3 scripts/addon_tools.py lint-workflow \
+  --workflow .github/workflows/sync.yml --runner-pin pin-required
+
+python3 scripts/addon_tools.py build-index \
+  --workflow .github/workflows/sync.yml --repo "$(git config --get remote.origin.url | sed 's#.*github.com[:/]##; s#\.git$##')" \
+  --out /tmp/addons.index.json        # materialize + eyeball the sweep's view
+```
+
+`IAM policy json (iam.policy.json)` is *not* validated here — bootstrap treats
+it as opaque JSON attached verbatim; check it manually or inline in your PR.
+
 ## iam.policy.json
 
 Copy `iam.policy.json.example` → `iam.policy.json` and fill in the feature
