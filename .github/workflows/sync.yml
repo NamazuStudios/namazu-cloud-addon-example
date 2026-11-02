@@ -10,7 +10,10 @@ name: addons-sync
 #
 # FILL ME: repo *Variables* (not secrets) must carry:
 #   ADDONS_EXECUTOR_ROLE_ARN — the role bootstrap/ minted
-# And the runner action pin: <PICK-A-RUNNER-SHA> → the runner repo's commit.
+# Until it is set, `apply` and `sweep` skip (nothing to assume a role with) so
+# an unconfigured fork is green rather than red; `prepare-index` still runs and
+# validates the matrix on every push.
+# The runner action is pinned below; bump that SHA deliberately to move.
 
 on:
   push:
@@ -41,6 +44,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+
+      # addon_tools.py imports yaml; the index step below is the first thing
+      # to touch it, so install here (validate.yml does the same).
+      - run: python3 -m pip install --quiet 'PyYAML>=6'
+
       - name: Materialize the index from THIS workflow's matrix
         run: |
           python3 scripts/addon_tools.py build-index \
@@ -53,7 +61,11 @@ jobs:
           path: addons.index.json
 
   apply:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Nothing to assume without the executor role: skip rather than fail the
+    # whole run on an empty role-to-assume (unconfigured fork / this template).
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && vars.ADDONS_EXECUTOR_ROLE_ARN != ''
     needs: prepare-index
     runs-on: ubuntu-latest
     strategy:
@@ -79,7 +91,7 @@ jobs:
           role-to-assume: ${{ vars.ADDONS_EXECUTOR_ROLE_ARN }}
           aws-region: ${{ matrix.install.region || env.AWS_REGION }}
       - name: apply addon
-        uses: NamazuStudios/namazu-cloud-addon-runner@<PICK-A-RUNNER-SHA>
+        uses: NamazuStudios/namazu-cloud-addon-runner@0b1de84103ad60868ece5a71634751509022d01c
         with:
           mode: apply
           repo: ${{ matrix.install.addon }}
@@ -93,7 +105,7 @@ jobs:
           eks_cluster_role_arn: ${{ env.EKS_ROLE_ARN }}
 
   sweep:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' && vars.ADDONS_EXECUTOR_ROLE_ARN != ''
     needs: prepare-index
     runs-on: ubuntu-latest
     steps:
@@ -107,7 +119,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: addons-index }
       - name: sweep orphans
-        uses: NamazuStudios/namazu-cloud-addon-runner@<PICK-A-RUNNER-SHA>
+        uses: NamazuStudios/namazu-cloud-addon-runner@0b1de84103ad60868ece5a71634751509022d01c
         with:
           mode: sweep
           index_file: addons.index.json
