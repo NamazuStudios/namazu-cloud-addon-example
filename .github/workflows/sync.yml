@@ -1,0 +1,119 @@
+name: addons-sync
+# The reviewed install list IS the manifest (contract clause 9): every entry
+# below is a PR-reviewed {addon, ref, tenant} install for this org's tenants.
+#
+# Rules encoded by scripts/addon_tools.py at validate time:
+#   - literal matrix entries only (no `${{ }}` inside entries) so the index
+#     can be materialized deterministically
+#   - external addon entries carry a pinned ref (SHA or protected v<semver> tag)
+#   - no duplicate (addon, tenant) pairs — one statefile serves one version
+#
+# FILL ME: repo *Variables* (not secrets) must carry:
+#   ADDONS_EXECUTOR_ROLE_ARN — the role bootstrap/ minted
+# And the runner action pin: <PICK-A-RUNNER-SHA> → the runner repo's commit.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/30 * * * *"   # sweep cadence (default 30 min, contract §11)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write            # for the OIDC role assumption
+
+concurrency:
+  group: addons-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ORGANIZATION_ID: "0000000000000000000000000000000000000000"  # ← this org's DB unique id
+  AWS_REGION: us-east-1
+  STATE_BUCKET: namazu-cloud-instance
+  CLUSTER_NAME: ""
+  EKS_ROLE_ARN: ""
+
+jobs:
+  prepare-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Materialize the index from THIS workflow's matrix
+        run: |
+          python3 scripts/addon_tools.py build-index \
+            --workflow .github/workflows/sync.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --out addons.index.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: addons-index
+          path: addons.index.json
+
+  apply:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: prepare-index
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        install:
+          # ── reviewed installs ────────────────────────────────────────────
+          # repo-less entry = THIS fork's private local root (repo defaults
+          # to the job's own repository; ref defaults to this push's SHA):
+          - { instance: "acme-prod", region: "us-east-1", bucket: "namazu-cloud-instance" }
+          # external addons are pinned (SHA or protected v<semver> tag):
+          # - { addon: "NamazuStudios/namazu-cloud-addon-waf", ref: "v1.2.0",
+          #     region: "us-east-1", bucket: "namazu-cloud-instance",
+          #     instance: "acme-prod" }
+          # - { addon: "NamazuStudios/namazu-cloud-addon-waf", ref: "v1.2.0",
+          #     region: "us-east-1", bucket: "namazu-cloud-instance",
+          #     workspace: "ws-9561" }
+    steps:
+      - uses: actions/checkout@v4        # fork checkout: local roots live here
+      - name: exec-plugin on PATH
+        run: echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.ADDONS_EXECUTOR_ROLE_ARN }}
+          aws-region: ${{ matrix.install.region || env.AWS_REGION }}
+      - name: apply addon
+        uses: NamazuStudios/namazu-cloud-addon-runner@<PICK-A-RUNNER-SHA>
+        with:
+          mode: apply
+          repo: ${{ matrix.install.addon }}
+          ref: ${{ matrix.install.ref }}
+          region: ${{ matrix.install.region || env.AWS_REGION }}
+          bucket: ${{ matrix.install.bucket || env.STATE_BUCKET }}
+          instance: ${{ matrix.install.instance }}
+          workspace: ${{ matrix.install.workspace }}
+          organization_id: ${{ env.ORGANIZATION_ID }}
+          eks_cluster_name: ${{ env.CLUSTER_NAME }}
+          eks_cluster_role_arn: ${{ env.EKS_ROLE_ARN }}
+
+  sweep:
+    if: github.event_name == 'schedule'
+    needs: prepare-index
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4        # local-root destroys need this checkout
+      - name: exec-plugin on PATH
+        run: echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.ADDONS_EXECUTOR_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/download-artifact@v4
+        with: { name: addons-index }
+      - name: sweep orphans
+        uses: NamazuStudios/namazu-cloud-addon-runner@<PICK-A-RUNNER-SHA>
+        with:
+          mode: sweep
+          index_file: addons.index.json
+          region: ${{ env.AWS_REGION }}
+          bucket: ${{ env.STATE_BUCKET }}
+          organization_id: ${{ env.ORGANIZATION_ID }}
+          eks_cluster_name: ${{ env.CLUSTER_NAME }}
+          eks_cluster_role_arn: ${{ env.EKS_ROLE_ARN }}
+          tidy: 'true'

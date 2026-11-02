@@ -1,0 +1,30 @@
+# manifest.yaml — THIS addon's input declaration (contract clause 10).
+#
+# `input` maps Terraform variable names (declared in variables.tf) to bindings:
+#   - a literal (evaluated as written)
+#   - `$instance.<output>[.<key>...]`  — resolved per invocation against THIS
+#     tenant's baseline root outputs
+#   - `$addon.<addon_id>.<output>[...]` — resolved from the OTHER addon's
+#     existing statefile for this tenant (loud failure if not installed)
+#   - `!`-prefixed variants — acknowledged sensitive wiring (rides the env
+#     channel only; never on disk, never logged)
+#
+# A value that does not start with a recognized unit token is a literal; there
+# is no `$$` escaping by design.
+#
+# The visibility contract: `visibility: shared` (default) makes this addon
+# consumable by any org fork; `visibility: private` + `owner_org` (this org's
+# database unique id) restricts consumption to that org (lint + audit
+# enforce; the fork-local private root flip is described in README).
+
+description: >-
+  Reference addon: ResourceQuota (pod ceiling) + optional default-deny
+  NetworkPolicy bundle, namespaced & labelled into the tenant namespace.
+visibility: shared
+input:
+  max_pods: 40
+  enable_network_policy: false
+  extra_manifests: {}
+  # Illustrative bindings (uncomment to wire against real outputs):
+  #  max_pods: $instance.addon_wiring.max_pods
+  #  restricted_namespace: $addon.waf.tenant_selector

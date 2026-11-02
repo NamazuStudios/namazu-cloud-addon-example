@@ -1,0 +1,45 @@
+# rbac.yaml — the Kubernetes-side half of the executor identity.
+#
+# bootstrap/ binds THIS fork's executor role into the `addons-executor`
+# Kubernetes group via an EKS access entry; this file gives that group its
+# verbs. Apply ONCE per cluster by an admin:
+#     kubectl apply -f rbac.yaml
+# Tighten later by replacing the broad ClusterRole with per-tenant
+# Role/RoleBindings if the org wants maximum rigidity; Broadness is honest
+# and reviewed here because addon repos are operator-authored.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: addons-executor
+rules:
+  # Namespaced CRUD for addon resources (kubectl_manifest targets, helm
+  # releases, etc. across tenant namespaces).
+  - apiGroups: ["", "apps", "batch", "networking.k8s.io", "rbac.authorization.k8s.io",
+                "autoscaling", "policy", "extensions", "kustomize.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Minimal cluster-scope needs (kubectl/provider layering: namespaces,
+  # CRDs, nodes list/watch, API discovery).
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions/status"]
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: addons-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: addons-executor
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: addons-executor

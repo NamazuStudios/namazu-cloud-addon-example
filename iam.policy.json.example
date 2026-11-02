@@ -1,0 +1,19 @@
+# iam.policy.json — THIS fork's least-privilege request (contract §7).
+#
+# The addon feature grants live here, versioned next to the code that needs
+# them, and are diffed in every PR. bootstrap/ merges them (as a separate
+# `feature` role policy) on top of the BASE grant every executor role carries.
+# Copy this file to `iam.policy.json`, fill in your real feature statements,
+# and drop any statements that don't apply.
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReplaceWithRealFeatureGrants",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*"
+    }
+  ],
+  "_comment": "Ships as an explicit Deny-all so an unedited empty feature grant is harmless."
+}

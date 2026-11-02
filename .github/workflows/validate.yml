@@ -1,0 +1,41 @@
+name: validate-addons
+# Contract validation for THIS fork: terraform fmt/validate + the two lints
+# (manifest.yaml grammar + the workflow-is-the-manifest checks). No mutation.
+
+on:
+  push: { branches: [main] }
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python3 -m pip install --quiet 'PyYAML>=6'
+
+      - name: terraform fmt + validate (backend-less init)
+        run: |
+          set -e
+          terraform fmt -check -recursive .
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: manifest lint (schema + visibility + binding grammar)
+        run: python3 scripts/addon_tools.py lint-manifest manifest.yaml
+
+      - name: workflow lint (installs ARE the manifest)
+        run: |
+          # Runners get SHA-pinned before any scheduled runs count:
+          # fail if the pin placeholder survives on main.
+          if [["$GITHUB_REF" == "refs/heads/main"]]; then
+            python3 scripts/addon_tools.py lint-workflow \
+              --workflow .github/workflows/sync.yml --runner-pin pin-required
+          else
+            python3 scripts/addon_tools.py lint-workflow \
+              --workflow .github/workflows/sync.yml --runner-pin any
+          fi
