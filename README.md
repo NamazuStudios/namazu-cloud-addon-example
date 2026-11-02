@@ -42,10 +42,13 @@ statefile name `=` sweep key).
 4. **Apply `bootstrap/rbac.yaml` once per cluster:**
    `kubectl apply -f bootstrap/rbac.yaml`
 5. **Add the role to GitHub:** repo *Variables* (not secrets) →
-   `ADDONS_EXECUTOR_ROLE_ARN` = bootstrap's `executor_role_arn` output.
-6. **Pin the runner:** replace `<PICK-A-RUNNER-SHA>` in both workflows with a
-   full SHA of `NamazuStudios/namazu-cloud-addon-runner`. On main, the
-   validate workflow fails while the placeholder survives.
+   `ADDONS_EXECUTOR_ROLE_ARN` = bootstrap's `executor_role_arn` output. Until
+   it is set, `apply` and `sweep` skip instead of failing, so a fork stays
+   green while you are still setting up.
+6. **Pin the runner:** both workflows ship pinned to a full SHA of
+   `NamazuStudios/namazu-cloud-addon-runner`. Bump the two `uses:` lines
+   together when you want a newer runner — on main the validate workflow fails
+   unless each is a full 40-hex SHA or a protected `v<semver>` tag.
 7. **Edit the install matrix** in `.github/workflows/sync.yml` — repo-less
    entries apply this fork's local root; external entries pin
    `{addon, ref}`.
