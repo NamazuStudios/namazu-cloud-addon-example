@@ -18,6 +18,13 @@ jobs:
         with: { python-version: '3.12' }
       - run: python3 -m pip install --quiet 'PyYAML>=6'
 
+      # The hosted runner image does not ship terraform; without this the very
+      # first fmt/init/validate dies with exit 127 and the lints never run.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
       - name: terraform fmt + validate (backend-less init)
         run: |
           set -e
@@ -32,7 +39,7 @@ jobs:
         run: |
           # Runners get SHA-pinned before any scheduled runs count:
           # fail if the pin placeholder survives on main.
-          if [["$GITHUB_REF" == "refs/heads/main"]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             python3 scripts/addon_tools.py lint-workflow \
               --workflow .github/workflows/sync.yml --runner-pin pin-required
           else

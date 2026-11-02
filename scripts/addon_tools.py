@@ -102,7 +102,7 @@ def build_index(workflow: str, repo: str, owner: str = "NamazuStudios") -> list:
     return index
 
 
-def lint_workflow(workflow: str, runner_uses: str = "") -> list:
+def lint_workflow(workflow: str, runner_pin: str = "any") -> list:
     """Return lint findings (empty = clean). Enforced: ref grammar, entry
     shape, duplicates, and (when a pin is expected) the runner `uses:` ref."""
     findings: list = []
@@ -120,7 +120,7 @@ def lint_workflow(workflow: str, runner_uses: str = "") -> list:
                 .get("steps") or [])
         runner_refs = [s.get("uses", "") for s in uses
                        if "namazu-cloud-addon-runner" in s.get("uses", "")]
-        if runner_uses == "pin-required":
+        if runner_pin == "pin-required":
             for u in runner_refs:
                 ref_part = u.split("@", 1)[1] if "@" in u else ""
                 if not SHA_RE.match(ref_part):
@@ -201,9 +201,10 @@ def main(argv=None) -> int:
                 print(f"LINT: {f}", file=sys.stderr)
             return 1 if findings else 0
         elif args.cmd == "lint-workflow":
-            findings = lint_workflow(args.workflow)
-            if args.runner_pin == "pin-required":
-                findings = [f for f in findings if "not SHA-pinned" in f]
+            # Pass the mode through. lint_workflow only *adds* the pin finding
+            # when pin-required; the old post-filter kept ONLY that finding, so
+            # on main it silently dropped every structural finding instead.
+            findings = lint_workflow(args.workflow, args.runner_pin)
             for f in findings:
                 print(f"LINT: {f}", file=sys.stderr)
             return 1 if findings else 0

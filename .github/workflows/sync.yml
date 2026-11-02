@@ -41,6 +41,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+
+      # addon_tools.py imports yaml; the index step below is the first thing
+      # to touch it, so install here (validate.yml does the same).
+      - run: python3 -m pip install --quiet 'PyYAML>=6'
+
       - name: Materialize the index from THIS workflow's matrix
         run: |
           python3 scripts/addon_tools.py build-index \
