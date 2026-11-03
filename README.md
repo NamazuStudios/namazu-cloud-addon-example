@@ -84,6 +84,27 @@ always. All resources carry `Repo=<org>/<repo>` +
 | `addons-executor` ClusterRole + Binding | `bootstrap/rbac.tf` | extend the rules for your addons |
 | Tenant ECR repositories (if `ecr_repositories` set) | `bootstrap/ecr.tf` | IMMUTABLE + lifecycle |
 
+## Teardown (decommissioning a fork)
+
+Order matters — the platform enforces the middle step:
+
+1. **Empty the install matrix** — delete the entries from the fork's
+   `.github/workflows/sync.yml`; the fork's sweep destroys each addon
+   install from state and tidies its key. Verify no
+   `tenants/*/<tenant>/addon_*.tfstate` keys remain.
+2. **Tenants can now be destroyed** — the deploy container refuses a tenant
+   destroy while any addon state key exists (destroy gate,
+   `namazu-cloud-instance` `docker/entrypoint.sh`), so this is what
+   unblocks tenant deletion.
+3. **Destroy the bootstrap** — `terraform -chdir=bootstrap destroy`
+   (backend-config as at init): takes down the executor role + policies,
+   the access entry, the `addons-executor` ClusterRole/Binding, and any ECR
+   repositories. This state lives **outside** `tenants/` and outside the
+   platform's sweep/gate by design — bootstrap authority is minted and
+   destroyed only by an operator.
+4. Remove the repo Variables (`ADDONS_EXECUTOR_ROLE_ARN`, `CLUSTER_NAME`,
+   `EKS_ROLE_ARN`) and the `ELEMENTS_GIT_TOKEN` secret.
+
 ## The contract files (reserved prefixes — not yours to change)
 
 - `00-backend.tf` — backend "s3" (bucket/region/key injected by the runner)
