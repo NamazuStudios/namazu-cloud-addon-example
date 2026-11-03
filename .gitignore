@@ -4,3 +4,4 @@ addons.index.json
 tfvars/*.auto.tfvars
 *.tfstate
 *.tfstate.*
+backend.hcl

@@ -30,29 +30,59 @@ statefile name `=` sweep key).
    and `$addon.<id>` refs).
 2. **Set `ORGANIZATION_ID`** in `.github/workflows/sync.yml` env to YOUR
    org's database unique id (machine field, never a name).
-3. **Bootstrap the executor role** (one-time; admin creds):
-   ```bash
-   terraform -chdir=bootstrap init
-   terraform -chdir=bootstrap apply \
-     -var=repository=namazu-cloud-addon-<your-org-slug> \
-     -var=aws_region=<region> \
-     -var=eks_cluster_name=<cluster> \
-     -var=state_bucket=<backend bucket>
-   ```
-4. **Apply `bootstrap/rbac.yaml` once per cluster:**
-   `kubectl apply -f bootstrap/rbac.yaml`
-5. **Add the role to GitHub:** repo *Variables* (not secrets) →
-   `ADDONS_EXECUTOR_ROLE_ARN` = bootstrap's `executor_role_arn` output. Until
-   it is set, `apply` and `sweep` skip instead of failing, so a fork stays
-   green while you are still setting up.
-6. **Pin the runner:** both workflows ship pinned to a full SHA of
+3. **Run `scripts/go-live.sh`** (interactive; **CI never applies this root** —
+   `validate.yml` only fmt/validates). One operator-run apply mints and
+   reconciles, from ONE durable S3 state (`bootstrap/<repo>.tfstate`):
+   - **IAM plane** — the executor role, its base + feature policies, the
+     EKS access entry binding it to the `addons-executor` group;
+   - **Cluster plane** (`bootstrap/rbac.tf`) — the `addons-executor`
+     ClusterRole + Binding. The kubernetes provider authenticates as
+     **whoever runs the apply** (no `--role-arn`), so the apply only ever
+     succeeds under an operator who already holds cluster access — the
+     executor role is the subject of the RBAC, never the identity that
+     reconciles it;
+   - **Registry** (`bootstrap/ecr.tf`, if `ecr_repositories` is non-empty) —
+     tenant ECR repositories with IMMUTABLE tags + lifecycle, for in-region
+     pulls;
+   - every minted resource is tagged `Repo`/`Component`, and the script
+     reads back everything it created before touching GitHub.
+   Then it sets the repo **Variables** (`ADDONS_EXECUTOR_ROLE_ARN`,
+   `CLUSTER_NAME`, `EKS_ROLE_ARN`) and optionally the `ELEMENTS_GIT_TOKEN`
+   secret. Re-runnable any time — terraform reconciles, wiring overwrites
+   only with confirmation.
+4. **GitHub wiring (or let go-live.sh do it):** repo *Variables* (not
+   secrets) — `ADDONS_EXECUTOR_ROLE_ARN` = bootstrap's `executor_role_arn`
+   output, plus `CLUSTER_NAME` / `EKS_ROLE_ARN` (the role the exec plugin
+   assumes). Until these exist, `apply`/`sweep`/any cluster-infra job skip
+   instead of failing, so a fork stays green while you are still setting up.
+5. **Pin the runner: both workflows ship pinned to a full SHA of
    `NamazuStudios/namazu-cloud-addon-runner`. Bump the two `uses:` lines
    together when you want a newer runner — on main the validate workflow fails
    unless each is a full 40-hex SHA or a protected `v<semver>` tag.
-7. **Edit the install matrix** in `.github/workflows/sync.yml` — repo-less
+6. **Edit the install matrix** in `.github/workflows/sync.yml` — repo-less
    entries apply this fork's local root; external entries pin
    `{addon, ref}`.
-8. Push to main → the sync workflow applies your addons to the named tenants.
+7. Push to main → the sync workflow applies your addons to the named
+   tenants (deploys happen on main only; PRs validate and never apply).
+
+## What bootstrap creates (the accounting)
+
+Everything the operator-run bootstrap mints is reconciled from ONE state:
+`s3://<backend bucket>/bootstrap/<repo>.tfstate` (fleet backend convention:
+`region`/`bucket`/`key`/`encrypt=true`, passed at `init` via
+`-backend-config`). CI runs `terraform validate` only — apply is manual,
+always. All resources carry `Repo=<org>/<repo>` +
+`Component=addons-executor-bootstrap` tags:
+
+| Resource | Where | Name |
+|---|---|---|
+| Executor IAM role | `bootstrap/main.tf` | `<repo>-executor` |
+| Base policy (tenant-tree read, addon-key writes, EKS describe) | `bootstrap/main.tf` | `<repo>-executor-base` |
+| Feature policy (from `iam.policy.json`) | `bootstrap/main.tf` | inline `feature` on the role |
+| OIDC provider (only if none exists) | `bootstrap/main.tf` | token.actions.githubusercontent.com |
+| EKS access entry → `addons-executor` group | `bootstrap/main.tf` | principal = the role |
+| `addons-executor` ClusterRole + Binding | `bootstrap/rbac.tf` | extend the rules for your addons |
+| Tenant ECR repositories (if `ecr_repositories` set) | `bootstrap/ecr.tf` | IMMUTABLE + lifecycle |
 
 ## The contract files (reserved prefixes — not yours to change)
 
