@@ -8,6 +8,16 @@ output "executor_role_arn" {
 }
 
 output "kubernetes_group" {
-  description = "Kubernetes group to bind in rbac.yaml (one apply, done)."
+  description = "Kubernetes group the executor identity lands in; rbac.tf binds this group's ClusterRole (same apply)."
   value       = var.kubernetes_group
+}
+
+output "ecr_registry" {
+  description = "The ECR registry host for this account/region — the docker login target for the tenant CI push wiring."
+  value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+}
+
+output "ecr_repository_urls" {
+  description = "Tenant ECR repository URLs by name — the values the tenant chart's image: flip and the CI push workflow point at."
+  value       = { for name, repo in aws_ecr_repository.tenant : name => repo.repository_url }
 }

@@ -10,7 +10,8 @@
 #     -var=eks_cluster_name=<cluster> \
 #     -var=state_bucket=<backend bucket>
 # then bind the eventual role ARN in the fork's GitHub variables as
-# ADDONS_EXECUTOR_ROLE_ARN (see README) and apply rbac.yaml's ClusterRole once.
+# ADDONS_EXECUTOR_ROLE_ARN (see README) — or just run scripts/go-live.sh,
+# which drives all of it interactively.
 
 locals {
   trust_subject = "repo:${var.github_organization}/${var.repository}:"
@@ -20,6 +21,19 @@ locals {
   # fork root). `try` keeps a fresh fork (example file, not yet renamed)
   # bootable with an EMPTY feature policy instead of a hard failure.
   feature_policy_json = var.feature_policy_json != "" ? var.feature_policy_json : try(file("${path.root}/../iam.policy.json"), "")
+  # Accounting tags stamped on everything this root mints (role, policies,
+  # access entry, ECR repos) — `aws iam list-roles` / tag editors can answer
+  # "what exists because of this repo" without this statefile.
+  bootstrap_tags = {
+    ManagedBy = "terraform"
+    Repo      = "${var.github_organization}/${var.repository}"
+    Component = "addons-executor-bootstrap"
+  }
+  # The role's own ARN, derived from its (known) name instead of the resource
+  # attribute — the trust policy needs the role as a principal and the role
+  # needs the trust policy, which is a cycle through the resource attribute.
+  # Assumes the default path // for the role (role_name has no path prefix).
+  executor_role_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.role_name}"
 }
 
 data "aws_partition" "current" {}
@@ -60,12 +74,31 @@ data "aws_iam_policy_document" "trust" {
       ]
     }
   }
+
+  statement {
+    # Self-assume: the addon runner execs `aws eks get-token --role-arn
+    # <eks_cluster_role_arn>` from within a session that IS this role (CI
+    # assumes it via OIDC), and the EKS exec plugin assumes the role before
+    # presigning its token. Without this statement that self-assume is
+    # denied (the web-identity statement above can't authorize it), and
+    # every addon's cluster-side apply dies at the provider.
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "AWS"
+      identifiers = [local.executor_role_arn]
+    }
+  }
 }
 
 resource "aws_iam_role" "executor" {
   name                 = local.role_name
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600
+
+  # Accounting: this role is minted by THIS root and must be findable in IAM
+  # listings by who/what created it (see README "What bootstrap creates").
+  tags = local.bootstrap_tags
 }
 
 # --------------------------------------------------------------------------
@@ -122,6 +155,8 @@ data "aws_iam_policy_document" "base" {
 resource "aws_iam_policy" "base" {
   name   = "${var.repository}-executor-base"
   policy = data.aws_iam_policy_document.base.json
+
+  tags = local.bootstrap_tags
 }
 
 # Feature grants: the addon's committed policy, attached as a separate inline
@@ -149,4 +184,6 @@ resource "aws_eks_access_entry" "executor" {
   cluster_name      = var.eks_cluster_name
   principal_arn     = aws_iam_role.executor.arn
   kubernetes_groups = [var.kubernetes_group]
+
+  tags = local.bootstrap_tags
 }
