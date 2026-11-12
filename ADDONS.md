@@ -58,6 +58,7 @@ price, which scales with the work rather than a fixed ticket.
 - **The support request is nonrefundable.**
 - **We take all reasonable efforts to approve everything** — our reviews
   exist to make your addon land safely, not to fail it.
+- **AGPL waiver for delivered work.** Namazu Studios, as the copyright holder, waives all AGPL obligations for software installed through a purchase or other business arrangement between Namazu Studios and the client. The AGPL terms govern the code as published; what we deliver to you under contract is delivered under that agreement, not the license's reciprocity terms.
 - **We operate a shared responsibility model.** Namazu Studios is
   responsible for **auditing security and protecting the health of the
   cluster** (the control plane, the executor identities, the platform).
