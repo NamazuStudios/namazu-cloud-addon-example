@@ -6,11 +6,13 @@ The single human-maintained source of truth is `.github/workflows/sync.yml`
 (the workflow invocation set IS the manifest, contract clause 9). This script:
 
   build-index   materializes the sync matrix into addons.index.json that the
-                sweep consumes (as {addon, ref, instance, workspace} entries)
+                sweep consumes (as {addon, ref, variant, instance, workspace}
+                entries)
   lint-manifest validates manifest.yaml schema/visibility/binding grammar
   lint-workflow validates the matrix itself: entry shape, ref grammar,
-                (addon, tenant) duplicates (one statefile can never serve
-                two versions), and the runner-action pin
+                REQUIRED variant, (addon, variant, tenant) duplicates (one
+                statefile can never serve two versions), and the
+                runner-action pin
 
 Note: regexes here mirror the runner's src/addons_cli.py by design — one-time
 copies, kept intentionally small so drift stays visible in review.
@@ -88,16 +90,26 @@ def build_index(workflow: str, repo: str, owner: str = "NamazuStudios") -> list:
         workspace = entry.get("workspace") or ""
         if bool(instance) == bool(workspace):
             raise LintError(f"entry needs exactly one of instance|workspace: {entry!r}")
-        pair = (addon_id, instance or workspace)
+        variant = entry.get("variant") or ""
+        if not SLUG_RE.match(variant) or len(variant) < 2:
+            raise LintError(
+                f"entry {entry!r}: 'variant' is REQUIRED and must match the "
+                "slug grammar ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ (min 2) — "
+                "every install is the triple (addon, variant, tenant); the "
+                "variant names THIS install (e.g. g5) and materializes the "
+                "statefile addon_<id>_<variant>.tfstate"
+            )
+        pair = (addon_id, variant, instance or workspace)
         if pair in pairs:
             # one statefile can never serve two versions: duplicate
-            # (addon, tenant) entries are a hard contract error (clause 3)
+            # (addon, variant, tenant) entries are a hard contract error
             raise LintError(
-                f"duplicate (addon, tenant) entry {pair} — two simultaneous "
-                "versions for one tenant would be two writers on one statefile"
+                f"duplicate (addon, variant, tenant) entry {pair} — two "
+                "simultaneous versions of one install would be two writers "
+                "on one statefile"
             )
         pairs.add(pair)
-        index.append({"addon": repo_name, "ref": ref,
+        index.append({"addon": repo_name, "ref": ref, "variant": variant,
                       "instance": instance, "workspace": workspace})
     return index
 
@@ -113,6 +125,12 @@ def lint_workflow(workflow: str, runner_pin: str = "any") -> list:
             findings.append(
                 f"entry {entry!r}: external addons must carry a pinned ref "
                 "(full 40-hex SHA or protected v<semver> tag)"
+            )
+        variant = entry.get("variant") or ""
+        if not SLUG_RE.match(variant) or len(variant) < 2:
+            findings.append(
+                f"entry {entry!r}: 'variant' is REQUIRED (slug grammar, min 2) "
+                "— every install is the triple (addon, variant, tenant)"
             )
     try:
         doc = _yaml_load(workflow)
@@ -162,8 +180,11 @@ def lint_manifest(path: str) -> list:
             m = REF_RE.match(raw)
             if m and m["unit"] == "addon":
                 rest = m["rest"]
-                if "." not in rest:
-                    findings.append(f"{path}: '{raw}' must name $addon.<id>.<output>")
+                if rest.count(".") < 2:
+                    findings.append(
+                        f"{path}: '{raw}' must name "
+                        "$addon.<id>.<variant>.<output> — the variant names "
+                        "WHICH install of that addon on this tenant")
     return findings
 
 
