@@ -1,5 +1,7 @@
 # Addons on Namazu Cloud — how tenants get them
 
+> System overview: [namazu-cloud-addon](https://github.com/NamazuStudios/namazu-cloud-addon)
+
 There are two ways an addon lands in your namespaces: **activate one of the
 official addons**, or **bring your own**. Both go through Namazu Studios —
 we are the operators of the shared cluster, and every addon runs under an
