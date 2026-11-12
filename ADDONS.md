@@ -32,6 +32,15 @@ it, and what you build is yours.
    the addon.
 3. **Once we approve, we install it to your namespaces at your request.**
 
+### Or: we author it for you
+
+Writing the Terraform yourself is optional. **Namazu Studios can author a
+custom addon for you, for a fee scoped to the work required** — tell us
+what you need installed, and we will write it, review it internally, and
+install it through the same process. The maintenance terms below are the
+same either way; the difference is who writes the first draft and the
+price, which scales with the work rather than a fixed ticket.
+
 ### Once your addon is live
 
 - You maintain it by **opening pull requests**, which we review.
