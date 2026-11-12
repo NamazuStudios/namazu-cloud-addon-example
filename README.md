@@ -182,3 +182,52 @@ Deny-all example grant is harmless.
 The implementation checklist lives in the plan doc's §11.6 — enable /
 disable / tenant-destroy (destroy-from-state!), cross-addon chaining, tag
 upgrades, divergent per-tenant versions, sensitivity channel.
+
+---
+
+## Example use cases orgs build with addons
+
+The addon system is generic Terraform-in-a-fork, but the workloads it
+lands are concrete. A few real shapes:
+
+### Per-tenant AI image generation (the full stack)
+
+A SaaS where every customer generates images or music with their own
+boundaries:
+
+- **gpu** — a dedicated Karpenter GPU pool per tenant (single-GPU serving
+  shapes, optional self-reclaiming 4-GPU pools for batch renders), quota
+  capped per tenant so one customer's burst never starves another.
+- **fast-storage-class** — a provisioned gp3 class per namespace so the
+  worker's multi-GB diffusion checkpoint restores from snapshot in
+  minutes, not half an hour; LoRA adapters swap per request.
+- **organization-ecr-repository** — the tenant's inference image (CUDA
+  base + model runtime, 5-8 GB) pinned by digest in-region, so every
+  freshly-provisioned GPU node pulls the exact tested build in seconds.
+
+One matrix entry per tenant turns a new customer on; the sweep turns
+them off.
+
+### Fine-tuned model serving with LoRA adapters
+
+Train LoRA adapters offline, ship them as volumes restored from
+snapshot through the fast storage class, serve on a GPU pool capped at
+the tenant's plan, and pin the serving image by digest so the adapter +
+runtime pairing is reproducible. Quota changes are a contract edit, not
+an infrastructure project.
+
+### Batch generation pipelines
+
+Video or music generation runs nightly per tenant on spot capacity
+(`capacity_types=["spot"]` in the entry), bursting into the -xl pools
+for the heavy multi-GPU stages, with the self-reclaim expiry returning
+the expensive machines automatically when the batch window closes.
+
+### Plain-tenant platform add-ons
+
+Not every addon is AI: ResourceQuota + default-deny NetworkPolicy (this
+repo's example root), in-account ECR for container images, SES wiring —
+anything an org needs that the shared cluster doesn't give by default.
+
+See [ADDONS.md](ADDONS.md) for how these get reviewed and installed, or
+the official addons for the fixed-fee versions of the pieces above.
