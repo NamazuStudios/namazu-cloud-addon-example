@@ -105,7 +105,11 @@ jobs:
           eks_cluster_role_arn: ${{ env.EKS_ROLE_ARN }}
 
   sweep:
-    if: github.event_name == 'schedule' && vars.ADDONS_EXECUTOR_ROLE_ARN != ''
+    # Same trigger as apply (merge or dispatch) - no cron: the merge that
+    # removes an entry does the destroying.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && vars.ADDONS_EXECUTOR_ROLE_ARN != ''
     needs: prepare-index
     runs-on: ubuntu-latest
     steps:
