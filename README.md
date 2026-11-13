@@ -1,7 +1,7 @@
 # namazu-cloud-addon-example
 
 
-> **This is the template for tenants who want their own Namazu Cloud addon.**
+> **This is the template for tenants who want their own [Namazu Cloud](https://cloud.namazustudios.com) addon.**
 > Part of the [Namazu Cloud Addon system](https://github.com/NamazuStudios/namazu-cloud-addon). Clone it, write your Terraform, and open a paid support ticket with Namazu
 > Studios — we review, audit, and install it into your namespaces. The full
 > process, terms, and shared-responsibility model: **[ADDONS.md](ADDONS.md)**.
@@ -14,7 +14,7 @@
 >
 > **License: MIT** — this template is intentionally permissive: what you
 > build from it is yours. (The official addons and the runner are
-> AGPL-3.0, and are Namazu Cloud's.)
+> AGPL-3.0, and are [Namazu Cloud](https://cloud.namazustudios.com)'s.)
 
 
 The working template for the per-tenant addon ecosystem: contract files, a
