@@ -1,0 +1,57 @@
+# The addons-executor ClusterRole: what the executor identity may do
+# in-cluster. PR-reviewed; reconciled on every bootstrap apply (rbac.tf
+# reads this file); deleted with terraform destroy. Forks extend the rules
+# below with what THEIR addons create.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: addons-executor
+rules:
+  # Namespaced CRUD for addon resources (kubectl_manifest targets, helm
+  # releases, etc. across tenant namespaces).
+  - apiGroups: ["", "apps", "batch", "networking.k8s.io", "rbac.authorization.k8s.io",
+                "autoscaling", "policy", "extensions", "kustomize.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Minimal cluster-scope needs (provider layering: namespaces, nodes
+  # list/watch, API discovery).
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  # StorageClasses + admission policies — what addons like the
+  # fast-storage-class addon create (one provisioned class per install +
+  # its namespace guard). Remove if your addon set needs neither.
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # CRDs — addons may define or consume them.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions/status"]
+    verbs: ["update", "patch"]
+  # Karpenter tier objects — what the gpu addon creates (NodePools + the
+  # dedicated GPU EC2NodeClass). Remove if you don't install the gpu addon.
+  - apiGroups: ["karpenter.sh"]
+    resources: ["nodepools", "nodepools/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["karpenter.k8s.aws"]
+    resources: ["ec2nodeclasses", "ec2nodeclasses/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: addons-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: addons-executor
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: addons-executor

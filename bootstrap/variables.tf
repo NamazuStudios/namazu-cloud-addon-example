@@ -15,6 +15,12 @@ variable "environment" {
   default     = "prod"
 }
 
+variable "create_oidc_provider" {
+  description = "Explicitly CREATE the GitHub OIDC provider (fresh accounts only). Default false: the hosting account usually already has one — the bootstrap adopts it by URL."
+  type        = bool
+  default     = false
+}
+
 variable "github_oidc_provider_arn" {
   description = "Existing GitHub OIDC provider ARN; empty = create one here."
   type        = string
@@ -54,14 +60,4 @@ variable "role_name" {
   default     = ""
 }
 
-variable "ecr_repositories" {
-  description = "Tenant ECR repositories to create in var.aws_region — the in-region pull home for images currently riding GHCR through a pull secret. Empty (default) = none."
-  type        = list(string)
-  default     = []
-}
 
-variable "ecr_pull_role_arns" {
-  description = "Role ARNs granted ECR pull on those repositories (e.g. the cluster's Karpenter node role). Empty = no repository policy; same-account pulls are then governed by the pulling role's own IAM policy alone."
-  type        = list(string)
-  default     = []
-}

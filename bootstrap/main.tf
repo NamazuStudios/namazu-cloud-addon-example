@@ -38,6 +38,8 @@ locals {
 
 data "aws_partition" "current" {}
 
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_openid_connect_provider" "github" {
   count = local.create_oidc ? 1 : 0
   url   = "https://token.actions.githubusercontent.com"
