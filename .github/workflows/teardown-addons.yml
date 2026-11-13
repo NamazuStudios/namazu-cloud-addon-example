@@ -1,0 +1,102 @@
+name: teardown-addons
+# CI-side destroy job: destroys EVERY addon install this fork manages.
+# SCOPED to this fork's own tenant prefixes (the executor role's S3 grant
+# covers all tenants, so the index is built from THIS fork's tenant ids
+# only; other orgs' addon states are never enumerated).
+# GATED: requires typing `destroy-addons` into the confirm input.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'destroy-addons' to confirm - destroys every addon install for THIS fork's tenants"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # FILL ME before go-live: this fork's org database id + tenant prefixes
+  ORGANIZATION_ID: "SET-ME"
+  AWS_REGION: "SET-ME"
+  STATE_BUCKET: "SET-ME"
+  TENANT_PREFIXES: |
+    tenants/<instances|sandboxes>/<tenant-id-1>/
+    tenants/<instances|sandboxes>/<tenant-id-2>/
+
+jobs:
+  destroy-addons:
+    if: >-
+      github.event.inputs.confirm == 'destroy-addons'
+      && vars.ADDONS_EXECUTOR_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python3 -m pip install --quiet 'PyYAML>=6'
+      - name: exec-plugin on PATH
+        run: echo "$GITHUB_WORKSPACE/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.ADDONS_EXECUTOR_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build the destroy index from THIS fork's tenant prefixes
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, yaml, os
+
+          bucket = os.environ["STATE_BUCKET"]
+          sync = yaml.safe_load(open(".github/workflows/sync.yml"))
+          entries = sync["jobs"]["apply"]["strategy"]["matrix"]["install"]
+          by_id = {}
+          for e in entries:
+              if not e.get("addon"):
+                  continue
+              aid = e["addon"].rsplit("-", 1)[-1]
+              by_id[aid] = (e["addon"], e["ref"])
+
+          index = []
+          for prefix in [p.strip() for p in os.environ["TENANT_PREFIXES"].split() if p.strip()]:
+              out = subprocess.run(
+                  ["aws", "s3api", "list-objects-v2", "--bucket", bucket,
+                   "--prefix", prefix, "--output", "json"],
+                  capture_output=True, text=True, check=True).stdout
+              for obj in json.loads(out or "{}").get("Contents", []):
+                  key = obj["Key"]
+                  if not key.endswith(".tfstate") or "/addon_" not in key:
+                      continue
+                  base = key.rsplit("/", 1)[-1]
+                  stem = base[len("addon_"):-len(".tfstate")]
+                  aid, variant = stem.rsplit("_", 1)
+                  kind = "instances" if "/instances/" in key else "sandboxes"
+                  tenant = key.split("/")[2]
+                  if aid == os.environ["FORK_SUFFIX"]:
+                      index.append({"addon": "", "ref": "", "variant": variant,
+                                    "instance": tenant if kind == "instances" else "",
+                                    "workspace": tenant if kind == "sandboxes" else ""})
+                  elif aid in by_id:
+                      repo, ref = by_id[aid]
+                      index.append({"addon": repo, "ref": ref, "variant": variant,
+                                    "instance": tenant if kind == "instances" else "",
+                                    "workspace": tenant if kind == "sandboxes" else ""})
+                  else:
+                      print(f"SKIP {key}: addon '{aid}' has no reviewed pin in sync.yml - destroy manually")
+          json.dump(index, open("addons.index.json", "w"), indent=2)
+          print(f"destroy index: {len(index)} entr(ies)")
+          PY
+        env:
+          FORK_SUFFIX: "SET-ME"
+
+      - name: Destroy every listed install (sweep semantics + tidy)
+        uses: NamazuStudios/namazu-cloud-addon-runner@6b6ade80ddf42a0dd67c5b8c5772098697f38dea
+        with:
+          mode: sweep
+          index_file: addons.index.json
+          region: ${{ env.AWS_REGION }}
+          bucket: ${{ env.STATE_BUCKET }}
+          organization_id: ${{ env.ORGANIZATION_ID }}
+          eks_cluster_name: ${{ vars.CLUSTER_NAME }}
+          eks_cluster_role_arn: ${{ vars.EKS_ROLE_ARN }}
+          tidy: 'true'
