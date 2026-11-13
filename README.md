@@ -235,3 +235,11 @@ anything an org needs that the shared cluster doesn't give by default.
 
 See [ADDONS.md](ADDONS.md) for how these get reviewed and installed, or
 the official addons for the fixed-fee versions of the pieces above.
+<p align="center">
+  <a href="https://cloud.namazustudios.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="aws-partner-dark.png">
+      <img src="aws-partner-light.png" alt="AWS Partner" width="200">
+    </picture>
+  </a>
+</p>
